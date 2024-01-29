@@ -18,7 +18,9 @@ import { Input } from "../ui/input";
 import { api } from "~/utils/api";
 import { useToast } from "../ui/use-toast";
 import { ToastAction } from "../ui/toast";
-import { GetUserStatusRefetch } from "../../types/global";
+import { useDispatch } from "react-redux";
+import { addNotification } from "../../context/slices/uiSlice";
+import { setUserStatus } from "../../context/slices/authSlice";
 
 const formSchema = z.object({
   username: z
@@ -26,14 +28,9 @@ const formSchema = z.object({
     .min(3, { message: "Username must be at least 3 characters long" }),
 });
 
-interface VerificationProps {
-  refetchUserStatus: GetUserStatusRefetch;
-}
-
-const Verification: React.FC<VerificationProps> = ({ refetchUserStatus }) => {
+const Verification = () => {
   const finalizationMutation = api.user.finalizeAccount.useMutation();
-  const { toast } = useToast();
-
+  const dispatch = useDispatch();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -48,19 +45,21 @@ const Verification: React.FC<VerificationProps> = ({ refetchUserStatus }) => {
       { username },
       {
         onSuccess: async () => {
-          toast({
-            description: "Success!",
-          });
-
-          await refetchUserStatus();
+          dispatch(
+            addNotification({
+              type: "success",
+            }),
+          );
+          dispatch(setUserStatus("FULLY_AUTHENTICATED"));
         },
         onError: (error) => {
-          toast({
-            title: "Whoops, something went wrong!",
-            description: "There was a problem with your request.",
-            variant: "destructive",
-            action: <ToastAction altText="Try again">Try again</ToastAction>,
-          });
+          dispatch(
+            addNotification({
+              type: "error",
+              message: error.message,
+              error: error,
+            }),
+          );
         },
       },
     );

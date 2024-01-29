@@ -16,9 +16,10 @@ import {
 } from "../ui/form";
 import { Input } from "../ui/input";
 import { api } from "~/utils/api";
-import { useToast } from "../ui/use-toast";
-import { ToastAction } from "../ui/toast";
 import { ReloadIcon } from "@radix-ui/react-icons";
+import { useDispatch } from "react-redux";
+import { addNotification } from "../../context/slices/uiSlice";
+import { toggleLoginView } from "../../context/slices/authSlice";
 
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address" }),
@@ -32,8 +33,9 @@ const Registration = () => {
   const [showPasswordInput, setShowPasswordInput] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
 
+  const dispatch = useDispatch();
+
   const registrationMutation = api.user.register.useMutation();
-  const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -43,25 +45,32 @@ const Registration = () => {
     },
   });
 
+  const handleLoginClick = () => {
+    dispatch(toggleLoginView(true));
+  };
+
   function onSubmit(values: z.infer<typeof formSchema>) {
     setIsRegistering(true); // Start loading
 
     registrationMutation.mutate(values, {
       onSuccess: () => {
-        toast({
-          title: "Success!",
-          description: "Check your email for a verification link.",
-        });
+        dispatch(
+          addNotification({
+            type: "success",
+            message: "Check your email for a verification link.",
+          }),
+        );
 
         setIsRegistering(false); // Stop loading
       },
       onError: (error) => {
-        toast({
-          title: "Whoops, something went wrong!",
-          description: "There was a problem with your request.",
-          variant: "destructive",
-          action: <ToastAction altText="Try again">Try again</ToastAction>,
-        });
+        dispatch(
+          addNotification({
+            type: "error",
+            message: "There was a problem with your request.",
+            error: error,
+          }),
+        );
       },
     });
   }
@@ -104,10 +113,11 @@ const Registration = () => {
       <div className="col-span-2 h-screen bg-gray-200">
         <div className="grid h-full w-full px-8 py-8">
           <div className="">
-            <button className="w-full">
-              <a href="/" className="text-right text-xl">
-                <p>Login</p>
-              </a>
+            <button
+              className="flex w-full flex-row-reverse text-xl"
+              onClick={handleLoginClick}
+            >
+              Login
             </button>
           </div>
           <div className="grid h-2/4 text-center">

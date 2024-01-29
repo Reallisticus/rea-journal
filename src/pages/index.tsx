@@ -1,27 +1,65 @@
 import Head from "next/head";
-import { parseCookies } from "nookies"; // or any other cookie parsing library
-import jwt, { JwtPayload } from "jsonwebtoken";
-import { env } from "~/env";
+
 import Registration from "../components/auth/registration.component";
-import { GetServerSideProps } from "next";
-import { UserStatus } from "../types/global";
+
 import Verification from "../components/auth/verification.component";
-import { useEffect, useState } from "react";
+
+import MainDashboard from "../components/dashboard/main.component";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState } from "../context/store/store";
+import Login from "../components/auth/login.component";
+import jwt, { JwtPayload } from "jsonwebtoken";
+import { GetServerSideProps } from "next";
+import { parseCookies } from "nookies";
+import { env } from "../env";
+import { useEffect } from "react";
+import {
+  setIsAuthenticated,
+  setLoading,
+  setUserDetails,
+  setUserStatus,
+} from "../context/slices/authSlice";
+import { BaseProps, UserStatus } from "../types/global";
 import { api } from "../utils/api";
 
-interface HomeProps {
-  userStatus: UserStatus;
+interface HomeProps extends BaseProps {
+  loading: boolean;
 }
 
-export default function Home({ userStatus: initialUserStatus }: HomeProps) {
-  const [userStatus, setUserStatus] = useState<UserStatus>(initialUserStatus);
-  const { data, refetch } = api.user.getUserStatus.useQuery();
+export default function Home({ userStatus, loading }: HomeProps) {
+  const { isLoginView, isLoading } = useSelector(
+    (state: RootState) => state.auth,
+  );
+  const isAuthenticated = useSelector(
+    (state: RootState) => state.auth.isAuthenticated,
+  );
+  const dispatch = useDispatch();
+  const userDetails = api.user.getUserDetails.useQuery();
+
+  console.log(userDetails.data);
 
   useEffect(() => {
-    if (data) {
-      setUserStatus(data.status);
+    dispatch(setUserStatus(userStatus));
+    if (userStatus === "FULLY_AUTHENTICATED") {
+      dispatch(setIsAuthenticated(true));
+      if (userDetails.data && userDetails.data.userDetails) {
+        dispatch(
+          setUserDetails({
+            email: userDetails.data.userDetails.email,
+            username: userDetails.data.userDetails.username || "",
+            avatarUrl:
+              userDetails.data.userDetails.avatar ||
+              "/public/images/default-avatar.png",
+          }),
+        );
+      }
     }
-  }, [data]);
+    dispatch(setLoading(loading));
+  }, [userStatus, loading]);
+
+  if (isLoading) {
+    return <div>Loading...</div>; // Or any loading indicator
+  }
 
   return (
     <>
@@ -31,11 +69,12 @@ export default function Home({ userStatus: initialUserStatus }: HomeProps) {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <main className="">
-        {userStatus === "FULLY_AUTHENTICATED" && <div>Hi</div>}
-        {userStatus === "VERIFIED" && (
-          <Verification refetchUserStatus={refetch} />
-        )}
-        {userStatus === "UNVERIFIED" && <Registration />}
+        {isAuthenticated && <MainDashboard />}
+        {!isAuthenticated && userStatus === "VERIFIED" && <Verification />}
+        {(!isAuthenticated &&
+          userStatus === "UNVERIFIED" &&
+          (isLoginView ? <Login /> : <Registration />)) ||
+          (!isAuthenticated && <Login />)}
       </main>
     </>
   );
@@ -47,6 +86,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
   const token = cookies.token;
 
   let userStatus: UserStatus = "UNVERIFIED";
+  let loading = false;
 
   if (token) {
     try {
@@ -56,10 +96,14 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
       } else if (decoded.emailVerified) {
         userStatus = "VERIFIED";
       }
-    } catch (err) {
-      console.error("JWT verification error:", err);
+    } catch (error) {
+      console.error("JWT verification error:", error);
+    } finally {
+      loading = false;
     }
+  } else {
+    loading = false;
   }
 
-  return { props: { userStatus } };
+  return { props: { userStatus, loading } };
 };

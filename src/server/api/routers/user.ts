@@ -134,17 +134,22 @@ export const userRoter = createTRPCRouter({
 
         const userId = decoded.userId;
 
-        console.log(userId);
-
-        const updatedUser = await ctx.db.user.update({
-          where: {
-            id: userId,
-          },
-          data: {
-            username,
-            status: "active",
-          },
-        });
+        const updatedUser = await ctx.db.user
+          .update({
+            where: {
+              id: userId,
+            },
+            data: {
+              username,
+              status: "active",
+            },
+          })
+          .catch((err) => {
+            if (err.code === "P2002") {
+              throw new Error("Username already taken");
+            }
+            throw new Error(err.message);
+          });
 
         const newJwtPayload: JwtCookie = {
           userId: updatedUser.id,
@@ -192,4 +197,77 @@ export const userRoter = createTRPCRouter({
 
     return { status: userStatus };
   }),
+  getUserDetails: publicProcedure.query(async ({ ctx }) => {
+    const token = ctx.req.cookies.token;
+
+    let userDetails = null;
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+        if (decoded.fullyAuthenticated) {
+          const user = await ctx.db.user.findUnique({
+            where: {
+              id: decoded.userId,
+            },
+            select: {
+              username: true,
+              email: true,
+              avatar: true,
+            },
+          });
+          userDetails = user;
+        }
+      } catch (err) {
+        console.error("JWT verification error:", err);
+      }
+    }
+
+    return { userDetails };
+  }),
+  logout: publicProcedure.mutation(async ({ ctx }) => {
+    ctx.res.setHeader(
+      "Set-Cookie",
+      "token=; Max-Age=0; path=/; HttpOnly; SameSite=Strict;",
+    );
+    return { message: "Logged out" };
+  }),
+  login: publicProcedure
+    .input(z.object({ username: z.string(), password: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const { username, password } = input;
+
+      const user = await ctx.db.user.findUnique({
+        where: {
+          username,
+        },
+      });
+
+      if (!user) throw new Error("Invalid username or password");
+
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+
+      if (!isPasswordValid) throw new Error("Invalid username or password");
+
+      const jwtPayload: JwtCookie = {
+        userId: user.id,
+        fullyAuthenticated: true,
+      };
+
+      const jwtToken = jwt.sign(jwtPayload, env.JWT_SECRET, {
+        expiresIn: "24h",
+      });
+
+      const cookieOptions = [
+        `token=${jwtToken}`,
+        `HttpOnly`,
+        `Path=/`,
+        `SameSite=Strict`,
+        env.NODE_ENV === "production" ? "Secure" : "",
+      ].join("; ");
+
+      ctx.res.setHeader("Set-Cookie", cookieOptions);
+
+      return { message: "Login successful" };
+    }),
 });
